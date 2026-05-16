@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id                   String    @id @default(cuid())
+  createdAt            DateTime  @default(now())
+
+  stravaAthleteId      Int?      @unique
+  stravaAccessToken    String?
+  stravaRefreshToken   String?
+  stravaTokenExpiresAt DateTime?
+
+  avgPaceSecsPerKm     Int?
+  weeklyMileageKm      Float?
+  fitnessLastUpdated   DateTime?
+
+  optimizationMode     String    @default("finish")
+  goalFinishTimeSecs   Int?
+  progressionRate      Float?
+
+  activities           StravaActivity[]
+  plan                 TrainingPlan?
+}
+
+model StravaActivity {
+  id               String   @id @default(cuid())
+  stravaId         BigInt   @unique
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  startDate        DateTime
+  distanceMeters   Float
+  movingTimeSecs   Int
+  avgPaceSecsPerKm Float?
+  avgHeartRate     Float?
+  type             String
+  name             String
+  createdAt        DateTime @default(now())
+}
+
+model TrainingPlan {
+  id        String         @id @default(cuid())
+  userId    String         @unique
+  user      User           @relation(fields: [userId], references: [id])
+  startDate DateTime
+  raceDate  DateTime
+  version   Int            @default(1)
+  createdAt DateTime       @default(now())
+  weeks     TrainingWeek[]
+}
+
+model TrainingWeek {
+  id         String       @id @default(cuid())
+  planId     String
+  plan       TrainingPlan @relation(fields: [planId], references: [id])
+  weekNumber Int
+  startDate  DateTime
+  totalKm    Float
+  focus      String
+  notes      String?
+  workouts   Workout[]
+
+  @@unique([planId, weekNumber])
+}
+
+model Workout {
+  id               String       @id @default(cuid())
+  weekId           String
+  week             TrainingWeek @relation(fields: [weekId], references: [id])
+  dayOfWeek        Int
+  date             DateTime
+  workoutType      String
+  distanceKm       Float?
+  targetPaceMin    Float?
+  targetPaceMax    Float?
+  coachNote        String
+  status           String       @default("pending")
+  stravaActivityId String?
+  actualDistanceKm Float?
+}
