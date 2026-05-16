@@ -4,9 +4,10 @@ import type { WeekData } from '@/types/plan'
 interface WeekCardProps {
   week: WeekData
   planVersion: number
+  isCurrent?: boolean
 }
 
-export function WeekCard({ week, planVersion }: WeekCardProps) {
+export function WeekCard({ week, planVersion, isCurrent }: WeekCardProps) {
   const weekStart = new Date(week.startDate)
   const weekEnd = new Date(weekStart)
   weekEnd.setDate(weekStart.getDate() + 6)
@@ -16,13 +17,14 @@ export function WeekCard({ week, planVersion }: WeekCardProps) {
   }
 
   return (
-    <section className="space-y-4">
+    <section id={`week-${week.weekNumber}`} className={`space-y-4 scroll-mt-6 rounded-2xl p-4 -mx-4 ${isCurrent ? 'bg-white/[0.03] ring-1 ring-white/10' : ''}`}>
       {/* Week header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
         <div>
-          <h2 className="text-xl font-bold text-white">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
             Week {week.weekNumber}
             <span className="text-gray-500 font-normal"> — {week.focus}</span>
+            {isCurrent && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">Current</span>}
           </h2>
           <p className="text-xs text-gray-600 mt-0.5">
             {fmtDate(weekStart)} – {fmtDate(weekEnd)}

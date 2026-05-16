@@ -77,7 +77,7 @@ export function WorkoutDayCard({ workout }: WorkoutDayCardProps) {
 
           {/* Coach note */}
           {workout.coachNote && (
-            <p className="text-xs text-gray-500 italic leading-relaxed line-clamp-3">
+            <p className="text-xs text-gray-500 italic leading-relaxed">
               {workout.coachNote}
             </p>
           )}

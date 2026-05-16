@@ -38,39 +38,37 @@ export default async function DashboardPage() {
 
   type DbWeek = { id: string; weekNumber: number; startDate: string; totalKm: number; focus: string; notes: string | null; workouts: { id: string; dayOfWeek: number; date: string; workoutType: string; distanceKm: number | null; targetPaceMin: number | null; targetPaceMax: number | null; coachNote: string; status: string; stravaActivityId: string | null; actualDistanceKm: number | null }[] }
   const today = new Date()
-  const currentWeekRaw = (sortedPlan?.weeks as DbWeek[] | undefined)?.find((w) => {
+  const currentWeekNumber = (sortedPlan?.weeks as DbWeek[] | undefined)?.find((w) => {
     const start = new Date(w.startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 7)
     return today >= start && today < end
-  }) ?? (sortedPlan?.weeks as DbWeek[] | undefined)?.[0] ?? null
+  })?.weekNumber ?? 1
 
-  const currentWeek: WeekData | null = currentWeekRaw
-    ? {
-        id: currentWeekRaw.id,
-        weekNumber: currentWeekRaw.weekNumber,
-        startDate: currentWeekRaw.startDate,
-        totalKm: currentWeekRaw.totalKm,
-        focus: currentWeekRaw.focus,
-        notes: currentWeekRaw.notes ?? null,
-        workouts: currentWeekRaw.workouts.map((w): WorkoutDay => ({
-          id: w.id,
-          dayOfWeek: w.dayOfWeek,
-          date: w.date,
-          workoutType: w.workoutType as WorkoutType,
-          distanceKm: w.distanceKm ?? null,
-          targetPaceMin: w.targetPaceMin ?? null,
-          targetPaceMax: w.targetPaceMax ?? null,
-          coachNote: w.coachNote,
-          status: w.status as WorkoutStatus,
-          stravaActivityId: w.stravaActivityId ?? null,
-          actualDistanceKm: w.actualDistanceKm ?? null,
-        })),
-      }
-    : null
+  const allWeeks: WeekData[] = (sortedPlan?.weeks as DbWeek[] | undefined)?.map((w) => ({
+    id: w.id,
+    weekNumber: w.weekNumber,
+    startDate: w.startDate,
+    totalKm: w.totalKm,
+    focus: w.focus,
+    notes: w.notes ?? null,
+    workouts: w.workouts.map((wo): WorkoutDay => ({
+      id: wo.id,
+      dayOfWeek: wo.dayOfWeek,
+      date: wo.date,
+      workoutType: wo.workoutType as WorkoutType,
+      distanceKm: wo.distanceKm ?? null,
+      targetPaceMin: wo.targetPaceMin ?? null,
+      targetPaceMax: wo.targetPaceMax ?? null,
+      coachNote: wo.coachNote,
+      status: wo.status as WorkoutStatus,
+      stravaActivityId: wo.stravaActivityId ?? null,
+      actualDistanceKm: wo.actualDistanceKm ?? null,
+    })),
+  })) ?? []
 
-  const totalWeeks = sortedPlan?.weeks.length ?? 15
-  const weekNumber = currentWeek?.weekNumber ?? 1
+  const totalWeeks = allWeeks.length || 15
+  const weekNumber = currentWeekNumber
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -118,8 +116,17 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {currentWeek && plan && (
-        <WeekCard week={currentWeek} planVersion={plan.version} />
+      {allWeeks.length > 0 && plan && (
+        <div className="space-y-10 mt-6">
+          {allWeeks.map((week) => (
+            <WeekCard
+              key={week.id}
+              week={week}
+              planVersion={plan.version}
+              isCurrent={week.weekNumber === weekNumber}
+            />
+          ))}
+        </div>
       )}
     </div>
   )
