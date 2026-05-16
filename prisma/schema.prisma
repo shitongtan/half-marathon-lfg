@@ -4,7 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -23,6 +25,10 @@ model User {
   optimizationMode     String    @default("finish")
   goalFinishTimeSecs   Int?
   progressionRate      Float?
+
+  // Persisted coaching context — updated after chat sessions
+  injuryHistory        String    @default("")
+  coachingNotes        String    @default("")
 
   activities           StravaActivity[]
   plan                 TrainingPlan?

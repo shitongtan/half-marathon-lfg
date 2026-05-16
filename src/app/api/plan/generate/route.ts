@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { generateTrainingPlan } from "@/lib/claude";
+import { generatePlan } from "@/lib/plan-generator";
 import { validatePlanMileageRamp } from "@/lib/training";
 import { getSession } from "@/lib/session";
 import type { ClaudePlanResponse } from "@/types/plan";
@@ -46,48 +46,13 @@ export async function POST(_req: Request): Promise<Response> {
   const raceDate = "2026-08-30";
   const totalWeeks = 15;
 
-  // 6. Get last 5 runs for context
-  const recentActivities = await prisma.stravaActivity.findMany({
-    where: {
-      userId: user.id,
-      type: "Run",
-    },
-    orderBy: { startDate: "desc" },
-    take: 5,
-    select: {
-      startDate: true,
-      distanceMeters: true,
-      avgPaceSecsPerKm: true,
-    },
+  // 7. Generate plan algorithmically
+  const plan: ClaudePlanResponse = generatePlan({
+    avgPaceSecsPerKm: user.avgPaceSecsPerKm,
+    weeklyMileageKm: user.weeklyMileageKm,
+    startDate,
+    raceDate,
   });
-
-  const recentRuns = recentActivities.map((a) => ({
-    date: a.startDate.toISOString().split("T")[0],
-    distanceKm: a.distanceMeters / 1000,
-    paceSecsPerKm: a.avgPaceSecsPerKm,
-  }));
-
-  // 7. Generate plan via Claude
-  let plan: ClaudePlanResponse;
-  try {
-    plan = await generateTrainingPlan({
-      avgPaceSecsPerKm: user.avgPaceSecsPerKm,
-      weeklyMileageKm: user.weeklyMileageKm,
-      progressionRate: user.progressionRate,
-      optimizationMode: user.optimizationMode,
-      goalFinishTimeSecs: user.goalFinishTimeSecs,
-      startDate,
-      raceDate,
-      totalWeeks,
-      recentRuns,
-    });
-  } catch (err) {
-    console.error("[plan/generate] Claude error:", err);
-    return Response.json(
-      { error: "Failed to generate training plan" },
-      { status: 500 }
-    );
-  }
 
   // 8. Validate mileage ramp — log but don't block
   const { valid, violations } = validatePlanMileageRamp(plan.weeks);
