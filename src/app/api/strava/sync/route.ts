@@ -1,152 +1,76 @@
 import { getSession } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/supabase";
 import { refreshTokenIfNeeded, fetchRecentActivities } from "@/lib/strava";
 
 export async function POST() {
   const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-  });
-
-  if (!user) {
-    return Response.json({ error: "User not found" }, { status: 404 });
-  }
-
-  if (!user.stravaAthleteId) {
-    return Response.json(
-      { error: "Strava account not connected" },
-      { status: 400 }
-    );
-  }
+  const { data: user } = await db.from("User").select("*").eq("id", session.userId).single();
+  if (!user) return Response.json({ error: "User not found" }, { status: 404 });
+  if (!user.stravaAthleteId) return Response.json({ error: "Strava not connected" }, { status: 400 });
 
   const accessToken = await refreshTokenIfNeeded(user);
 
   const afterUnixSecs = Math.floor(Date.now() / 1000) - 90 * 24 * 3600;
   const activities = await fetchRecentActivities(accessToken, afterUnixSecs);
-
   const runs = activities.filter((a) => a.type === "Run");
 
   for (const activity of runs) {
-    await prisma.stravaActivity.upsert({
-      where: { stravaId: BigInt(activity.id) },
-      create: {
-        stravaId: BigInt(activity.id),
-        userId: user.id,
-        name: activity.name,
-        type: activity.type,
-        startDate: new Date(activity.start_date),
-        distanceMeters: activity.distance,
-        movingTimeSecs: activity.moving_time,
-        avgPaceSecsPerKm:
-          activity.distance > 0
-            ? Math.round(activity.moving_time / (activity.distance / 1000))
-            : null,
-        avgHeartRate: activity.average_heartrate ?? null,
-      },
-      update: {
-        name: activity.name,
-        type: activity.type,
-        startDate: new Date(activity.start_date),
-        distanceMeters: activity.distance,
-        movingTimeSecs: activity.moving_time,
-        avgPaceSecsPerKm:
-          activity.distance > 0
-            ? Math.round(activity.moving_time / (activity.distance / 1000))
-            : null,
-        avgHeartRate: activity.average_heartrate ?? null,
-      },
-    });
+    const avgPaceSecsPerKm =
+      activity.distance > 0
+        ? Math.round(activity.moving_time / (activity.distance / 1000))
+        : null;
+
+    await db.from("StravaActivity").upsert({
+      id: crypto.randomUUID(),
+      stravaId: activity.id.toString(),
+      userId: user.id,
+      name: activity.name,
+      type: activity.type,
+      startDate: new Date(activity.start_date).toISOString(),
+      distanceMeters: activity.distance,
+      movingTimeSecs: activity.moving_time,
+      avgPaceSecsPerKm,
+      avgHeartRate: activity.average_heartrate ?? null,
+    }, { onConflict: "stravaId", ignoreDuplicates: false });
   }
 
-  // Compute fitness metrics
-  const recentRuns = await prisma.stravaActivity.findMany({
-    where: { userId: user.id, type: "Run" },
-    orderBy: { startDate: "desc" },
-    take: 10,
-  });
+  // Compute fitness metrics from recent runs
+  const { data: recentRuns } = await db
+    .from("StravaActivity")
+    .select("avgPaceSecsPerKm")
+    .eq("userId", user.id)
+    .eq("type", "Run")
+    .order("startDate", { ascending: false })
+    .limit(10);
 
-  const pacesWithValues = recentRuns
+  const paces = (recentRuns ?? [])
     .map((r) => r.avgPaceSecsPerKm)
     .filter((p): p is number => p !== null);
 
   const avgPaceSecsPerKm =
-    pacesWithValues.length > 0
-      ? Math.round(
-          pacesWithValues.reduce((sum, p) => sum + p, 0) /
-            pacesWithValues.length
-        )
-      : null;
+    paces.length > 0 ? Math.round(paces.reduce((s, p) => s + p, 0) / paces.length) : null;
 
-  const twentyEightDaysAgo = new Date(Date.now() - 28 * 24 * 3600 * 1000);
-  const recentRuns28d = await prisma.stravaActivity.findMany({
-    where: {
-      userId: user.id,
-      type: "Run",
-      startDate: { gte: twentyEightDaysAgo },
-    },
-  });
+  const since28d = new Date(Date.now() - 28 * 24 * 3600 * 1000).toISOString();
+  const { data: runs28d } = await db
+    .from("StravaActivity")
+    .select("distanceMeters")
+    .eq("userId", user.id)
+    .eq("type", "Run")
+    .gte("startDate", since28d);
 
-  const totalDistanceKm = recentRuns28d.reduce(
-    (sum, r) => sum + r.distanceMeters / 1000,
-    0
-  );
-  const weeklyMileageKm = totalDistanceKm / 4;
+  const weeklyMileageKm =
+    (runs28d ?? []).reduce((s, r) => s + r.distanceMeters / 1000, 0) / 4;
 
-  // Compute progression rate
-  const completedWorkouts = await prisma.workout.findMany({
-    where: {
-      week: { plan: { userId: user.id } },
-      status: "completed",
-      stravaActivityId: { not: null },
-    },
-    include: { week: true },
-  });
-
-  let progressionRate = 1.0;
-
-  if (completedWorkouts.length > 0) {
-    const ratios: number[] = [];
-
-    for (const workout of completedWorkouts) {
-      if (!workout.targetPaceMin || !workout.stravaActivityId) continue;
-
-      const stravaActivity = await prisma.stravaActivity.findUnique({
-        where: { id: workout.stravaActivityId },
-      });
-
-      if (!stravaActivity?.avgPaceSecsPerKm) continue;
-
-      const targetPaceSecs = workout.targetPaceMin * 60;
-      const ratio = targetPaceSecs / stravaActivity.avgPaceSecsPerKm;
-      ratios.push(ratio);
-    }
-
-    if (ratios.length > 0) {
-      progressionRate =
-        ratios.reduce((sum, r) => sum + r, 0) / ratios.length;
-    }
-  }
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      avgPaceSecsPerKm,
-      weeklyMileageKm,
-      progressionRate,
-      fitnessLastUpdated: new Date(),
-    },
-  });
+  await db.from("User").update({
+    avgPaceSecsPerKm,
+    weeklyMileageKm,
+    fitnessLastUpdated: new Date().toISOString(),
+  }).eq("id", user.id);
 
   return Response.json({
     activitiesImported: runs.length,
-    fitnessMetrics: {
-      avgPaceSecsPerKm,
-      weeklyMileageKm,
-      progressionRate,
-    },
+    fitnessMetrics: { avgPaceSecsPerKm, weeklyMileageKm },
   });
 }

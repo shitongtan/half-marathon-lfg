@@ -2,34 +2,34 @@
 /**
  * One-time CLI plan generator.
  * Usage: npx tsx scripts/generate-plan.ts [--user <userId>]
- *
- * Reads fitness metrics from the DB (or uses defaults), generates a 15-week
- * Hal Higdon Novice 2 plan, and writes it to the DB.
  */
 
 import "dotenv/config";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { createClient } from "@supabase/supabase-js";
 import { generatePlan } from "../src/lib/plan-generator";
 import { validatePlanMileageRamp } from "../src/lib/training";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+const db = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 async function main() {
-  // Parse optional --user flag
   const userFlagIdx = process.argv.indexOf("--user");
   const explicitUserId = userFlagIdx !== -1 ? process.argv[userFlagIdx + 1] : null;
 
-  // Find target user
-  const user = explicitUserId
-    ? await prisma.user.findUnique({ where: { id: explicitUserId } })
-    : await prisma.user.findFirst({ orderBy: { id: "asc" } });
+  let user;
+  if (explicitUserId) {
+    const { data } = await db.from("User").select("*").eq("id", explicitUserId).single();
+    user = data;
+  } else {
+    const { data } = await db.from("User").select("*").limit(1).single();
+    user = data;
+  }
 
   if (!user) {
-    console.error("No user found in DB. Connect Strava first (run the app and visit /api/strava/auth).");
+    console.error("No user found. Connect Strava first by visiting /api/strava/auth.");
     process.exit(1);
   }
 
@@ -39,7 +39,6 @@ async function main() {
   );
   console.log(`  Weekly mileage: ${user.weeklyMileageKm ? user.weeklyMileageKm.toFixed(1) + "km" : "no data (using 12km default)"}`);
 
-  // startDate = next Monday on or after today
   const today = new Date();
   const day = today.getDay();
   const daysUntilMonday = day === 1 ? 0 : (8 - day) % 7;
@@ -48,10 +47,8 @@ async function main() {
   const startDate = start.toISOString().split("T")[0];
   const raceDate = "2026-08-30";
 
-  console.log(`  Start date: ${startDate}  →  Race date: ${raceDate}`);
-  console.log("");
+  console.log(`  Start date: ${startDate}  →  Race date: ${raceDate}\n`);
 
-  // Generate
   const plan = generatePlan({
     avgPaceSecsPerKm: user.avgPaceSecsPerKm,
     weeklyMileageKm: user.weeklyMileageKm,
@@ -59,83 +56,66 @@ async function main() {
     raceDate,
   });
 
-  // Validate ramp
   const { valid, violations } = validatePlanMileageRamp(plan.weeks);
-  if (!valid) {
-    console.warn("⚠  Mileage ramp violations (logged, not blocking):", violations);
+  if (!valid) console.warn("⚠  Mileage ramp violations:", violations);
+
+  // Delete existing plan
+  const { data: existing } = await db.from("TrainingPlan").select("id").eq("userId", user.id).maybeSingle();
+  if (existing) {
+    const { data: weeks } = await db.from("TrainingWeek").select("id").eq("planId", existing.id);
+    const weekIds = (weeks ?? []).map((w: { id: string }) => w.id);
+    if (weekIds.length > 0) await db.from("Workout").delete().in("weekId", weekIds);
+    await db.from("TrainingWeek").delete().eq("planId", existing.id);
+    await db.from("TrainingPlan").delete().eq("id", existing.id);
+    console.log("Deleted existing plan.");
   }
 
-  // Write to DB in transaction
-  await prisma.$transaction(async (tx) => {
-    // Remove old plan
-    const existing = await tx.trainingPlan.findUnique({
-      where: { userId: user.id },
-      select: { id: true },
-    });
-    if (existing) {
-      await tx.workout.deleteMany({ where: { week: { planId: existing.id } } });
-      await tx.trainingWeek.deleteMany({ where: { planId: existing.id } });
-      await tx.trainingPlan.delete({ where: { id: existing.id } });
-      console.log("Deleted existing plan.");
-    }
-
-    // Create new plan
-    const newPlan = await tx.trainingPlan.create({
-      data: {
-        userId: user.id,
-        startDate: new Date(startDate),
-        raceDate: new Date(raceDate),
-        version: 1,
-      },
-    });
-
-    for (const week of plan.weeks) {
-      const trainingWeek = await tx.trainingWeek.create({
-        data: {
-          planId: newPlan.id,
-          weekNumber: week.weekNumber,
-          startDate: new Date(week.startDate),
-          totalKm: week.totalKm,
-          focus: week.focus,
-          notes: week.notes,
-        },
-      });
-
-      for (const workout of week.workouts) {
-        await tx.workout.create({
-          data: {
-            weekId: trainingWeek.id,
-            dayOfWeek: workout.dayOfWeek,
-            date: new Date(workout.date),
-            workoutType: workout.workoutType,
-            distanceKm: workout.distanceKm,
-            targetPaceMin: workout.targetPaceMin,
-            targetPaceMax: workout.targetPaceMax,
-            coachNote: workout.coachNote,
-            status: "pending",
-          },
-        });
-      }
-    }
-
-    console.log(`Plan created (id: ${newPlan.id})`);
+  const planId = crypto.randomUUID();
+  await db.from("TrainingPlan").insert({
+    id: planId,
+    userId: user.id,
+    startDate: new Date(startDate).toISOString(),
+    raceDate: new Date(raceDate).toISOString(),
+    version: 1,
   });
 
-  // Print summary
-  console.log("\n=== 15-WEEK PLAN SUMMARY ===\n");
+  for (const week of plan.weeks) {
+    const weekId = crypto.randomUUID();
+    await db.from("TrainingWeek").insert({
+      id: weekId,
+      planId,
+      weekNumber: week.weekNumber,
+      startDate: new Date(week.startDate).toISOString(),
+      totalKm: week.totalKm,
+      focus: week.focus,
+      notes: week.notes,
+    });
+
+    await db.from("Workout").insert(
+      week.workouts.map((w) => ({
+        id: crypto.randomUUID(),
+        weekId,
+        dayOfWeek: w.dayOfWeek,
+        date: new Date(w.date).toISOString(),
+        workoutType: w.workoutType,
+        distanceKm: w.distanceKm,
+        targetPaceMin: w.targetPaceMin,
+        targetPaceMax: w.targetPaceMax,
+        coachNote: w.coachNote,
+        status: "pending",
+      }))
+    );
+  }
+
+  console.log(`Plan created (id: ${planId})\n\n=== 15-WEEK PLAN SUMMARY ===\n`);
   for (const week of plan.weeks) {
     const runs = week.workouts.filter((w) => w.distanceKm);
     const totalKm = week.totalKm.toFixed(1);
     const runSummary = runs.map((w) => `${w.workoutType} ${w.distanceKm}km`).join(", ");
-    console.log(`Week ${String(week.weekNumber).padStart(2, " ")}  [${week.focus.padEnd(14)}]  ${totalKm.padStart(5)}km  — ${runSummary}`);
+    console.log(`Week ${String(week.weekNumber).padStart(2)} [${week.focus.padEnd(14)}] ${totalKm.padStart(5)}km — ${runSummary}`);
   }
 
   console.log("\nDone. Open your dashboard to view your plan.");
-  await prisma.$disconnect();
-  await pool.end();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch((err) => { console.error(err); process.exit(1); });
