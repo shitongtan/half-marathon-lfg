@@ -7,11 +7,16 @@
  * Hal Higdon Novice 2 plan, and writes it to the DB.
  */
 
+import "dotenv/config";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { generatePlan } from "../src/lib/plan-generator";
 import { validatePlanMileageRamp } from "../src/lib/training";
 
-const prisma = new PrismaClient();
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Parse optional --user flag
@@ -125,8 +130,9 @@ async function main() {
     console.log(`Week ${String(week.weekNumber).padStart(2, " ")}  [${week.focus.padEnd(14)}]  ${totalKm.padStart(5)}km  — ${runSummary}`);
   }
 
-  console.log("\nDone. Open http://localhost:3000/dashboard to view your plan.");
+  console.log("\nDone. Open your dashboard to view your plan.");
   await prisma.$disconnect();
+  await pool.end();
 }
 
 main().catch((err) => {
