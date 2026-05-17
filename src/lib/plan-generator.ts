@@ -369,6 +369,8 @@ export function generatePlan(params: {
   thresholdPaceSecsPerKm?: number | null;
   startDate: string;
   raceDate: string;
+  totalWeeks?: number;
+  startWeekIndex?: number;
 }): ClaudePlanResponse {
   const { startDate } = params;
 
@@ -381,11 +383,17 @@ export function generatePlan(params: {
   // At sf=1.4 an experienced runner hits the 18km long-run cap from W10 onward.
   const scaleFactor = Math.min(1.4, Math.max(0.6, weeklyMileage / 24));
 
+  const effectiveTotalWeeks = params.totalWeeks ?? WEEK_TEMPLATES.length;
+  const effectiveStartIndex = params.startWeekIndex ?? 0;
+
   const start = new Date(startDate);
   const weeks: ClaudePlanWeek[] = [];
 
-  WEEK_TEMPLATES.forEach((template, i) => {
-    const weekNumber = i + 1;
+  for (let i = 0; i < effectiveTotalWeeks; i++) {
+    const template = WEEK_TEMPLATES[effectiveStartIndex + i];
+    if (!template) break;
+
+    const weekNumber = effectiveStartIndex + i + 1;
     const weekStart = addDays(start, i * 7);
 
     const workouts: ClaudePlanWorkout[] = template.days.map((day) => {
@@ -419,7 +427,7 @@ export function generatePlan(params: {
       notes: template.notes,
       workouts,
     });
-  });
+  }
 
   return { weeks };
 }

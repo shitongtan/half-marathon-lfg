@@ -60,6 +60,13 @@ export async function POST(): Promise<Response> {
   const startDate = start.toISOString().split("T")[0];
   const raceDate = "2026-08-30";
 
+  // Calculate remaining weeks from the new start date to race day
+  const raceDateObj = new Date(raceDate + "T00:00:00.000Z");
+  const startDateObj = new Date(startDate + "T00:00:00.000Z");
+  const daysToRace = (raceDateObj.getTime() - startDateObj.getTime()) / (24 * 3600 * 1000);
+  const remainingWeeks = Math.min(15, Math.max(1, Math.ceil(daysToRace / 7)));
+  const startWeekIndex = 15 - remainingWeeks;
+
   const plan = generatePlan({
     avgPaceSecsPerKm: user.avgPaceSecsPerKm,
     weeklyMileageKm: user.weeklyMileageKm,
@@ -67,38 +74,55 @@ export async function POST(): Promise<Response> {
     thresholdPaceSecsPerKm,
     startDate,
     raceDate,
+    totalWeeks: remainingWeeks,
+    startWeekIndex,
   });
 
   const { valid, violations } = validatePlanMileageRamp(plan.weeks);
   if (!valid) console.warn("[plan/generate] Mileage ramp violations:", violations);
 
   try {
-    // Delete existing plan
     const { data: existing } = await db
       .from("TrainingPlan")
       .select("id")
       .eq("userId", user.id)
       .maybeSingle();
 
-    if (existing) {
-      const { data: weeks } = await db.from("TrainingWeek").select("id").eq("planId", existing.id);
-      const weekIds = (weeks ?? []).map((w) => w.id);
-      if (weekIds.length > 0) {
-        await db.from("Workout").delete().in("weekId", weekIds);
-      }
-      await db.from("TrainingWeek").delete().eq("planId", existing.id);
-      await db.from("TrainingPlan").delete().eq("id", existing.id);
-    }
+    let planId: string;
 
-    // Create plan
-    const planId = crypto.randomUUID();
-    await db.from("TrainingPlan").insert({
-      id: planId,
-      userId: user.id,
-      startDate: new Date(startDate).toISOString(),
-      raceDate: new Date(raceDate).toISOString(),
-      version: 1,
-    });
+    if (existing) {
+      planId = existing.id;
+
+      // Delete only future workouts (today onwards), leaving past ones intact
+      const todayISO = today.toISOString().split("T")[0] + "T00:00:00.000Z";
+      const { data: allWeeks } = await db.from("TrainingWeek").select("id").eq("planId", planId);
+      const allWeekIds = (allWeeks ?? []).map((w) => w.id);
+
+      if (allWeekIds.length > 0) {
+        await db.from("Workout").delete().in("weekId", allWeekIds).gte("date", todayISO);
+
+        // Delete weeks that are now empty (all their workouts were in the future)
+        const { data: remainingWorkouts } = await db
+          .from("Workout")
+          .select("weekId")
+          .in("weekId", allWeekIds);
+        const weeksWithWorkouts = new Set((remainingWorkouts ?? []).map((w) => w.weekId));
+        const emptyWeekIds = allWeekIds.filter((id) => !weeksWithWorkouts.has(id));
+        if (emptyWeekIds.length > 0) {
+          await db.from("TrainingWeek").delete().in("id", emptyWeekIds);
+        }
+      }
+    } else {
+      // No existing plan — create a fresh one
+      planId = crypto.randomUUID();
+      await db.from("TrainingPlan").insert({
+        id: planId,
+        userId: user.id,
+        startDate: new Date(startDate).toISOString(),
+        raceDate: new Date(raceDate).toISOString(),
+        version: 1,
+      });
+    }
 
     for (const week of plan.weeks) {
       const weekId = crypto.randomUUID();

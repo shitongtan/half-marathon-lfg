@@ -18,7 +18,7 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: Nav
   const [syncMsg, setSyncMsg] = useState<{ error?: string; info?: string } | null>(null)
 
   async function handleRegenerate() {
-    if (!confirm('This will delete your current plan and all logged progress. Regenerate?')) return
+    if (!confirm('This will regenerate your plan from today onwards. Past workouts will be preserved. Continue?')) return
     setRegenerating(true)
     try {
       await fetch('/api/plan/generate', { method: 'POST' })
