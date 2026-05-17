@@ -6,7 +6,7 @@ import { FitnessMetrics } from '@/components/dashboard/FitnessMetrics'
 import { StravaConnectBanner } from '@/components/dashboard/StravaConnectBanner'
 import { CalendarView } from '@/components/dashboard/CalendarView'
 import { GeneratePlanButton } from '@/components/dashboard/GeneratePlanButton'
-import type { WeekData, WorkoutDay, WorkoutType, WorkoutStatus, ManualActivity } from '@/types/plan'
+import type { WeekData, WorkoutDay, WorkoutType, WorkoutStatus, ManualActivity, StravaDisplayActivity } from '@/types/plan'
 import Link from 'next/link'
 
 export default async function DashboardPage() {
@@ -85,6 +85,28 @@ export default async function DashboardPage() {
     workoutId: (a.workoutId as string | null) ?? null,
   }))
 
+  // Fetch all Strava activities; exclude ones already matched to plan workouts
+  const matchedStravaIds = new Set(
+    allWeeks.flatMap(w => w.workouts)
+      .map(wo => wo.stravaActivityId)
+      .filter(Boolean) as string[]
+  )
+
+  const { data: stravaRaw } = await db
+    .from('StravaActivity')
+    .select('stravaId, type, startDate, distanceMeters, movingTimeSecs')
+    .eq('userId', session.userId)
+
+  const stravaActivities: StravaDisplayActivity[] = (stravaRaw ?? [])
+    .filter((a: Record<string, unknown>) => !matchedStravaIds.has(a.stravaId as string))
+    .map((a: Record<string, unknown>) => ({
+      stravaId: a.stravaId as string,
+      type: a.type as string,
+      startDate: a.startDate as string,
+      distanceMeters: a.distanceMeters as number,
+      movingTimeSecs: a.movingTimeSecs as number,
+    }))
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <Navbar
@@ -134,7 +156,7 @@ export default async function DashboardPage() {
 
       {allWeeks.length > 0 && plan && (
         <div className="mt-6">
-          <CalendarView workouts={allWeeks.flatMap(w => w.workouts)} manualActivities={manualActivities} />
+          <CalendarView workouts={allWeeks.flatMap(w => w.workouts)} manualActivities={manualActivities} stravaActivities={stravaActivities} />
         </div>
       )}
     </div>

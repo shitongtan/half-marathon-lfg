@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { WorkoutDay, ManualActivity } from '@/types/plan'
+import type { WorkoutDay, ManualActivity, StravaDisplayActivity } from '@/types/plan'
 
 const ACTIVITY_EMOJI: Record<string, string> = {
   'Run':        '🏃',
@@ -65,9 +65,11 @@ type Sel =
 export function CalendarView({
   workouts,
   manualActivities = [],
+  stravaActivities = [],
 }: {
   workouts: WorkoutDay[]
   manualActivities?: ManualActivity[]
+  stravaActivities?: StravaDisplayActivity[]
 }) {
   const now = new Date()
   const [offset, setOffset] = useState(0)
@@ -82,6 +84,10 @@ export function CalendarView({
 
   const byDateManual = new Map<string, ManualActivity>()
   for (const a of manualActivities) byDateManual.set(a.startDate.slice(0, 10), a)
+
+  // Use start_date_local slice for correct local-date matching
+  const byDateStrava = new Map<string, StravaDisplayActivity>()
+  for (const a of stravaActivities) byDateStrava.set(a.startDate.slice(0, 10), a)
 
   const firstDay = new Date(yr, mo, 1)
   const daysInMo = new Date(yr, mo + 1, 0).getDate()
@@ -175,6 +181,7 @@ export function CalendarView({
             const ds = localDateStr(day)
             const wo = byDate.get(ds)
             const ma = byDateManual.get(ds)
+            const sa = !wo ? byDateStrava.get(ds) : undefined
             const isToday = ds === todayStr
             const isPast = ds < todayStr
             const isPastOrToday = ds <= todayStr
@@ -182,7 +189,7 @@ export function CalendarView({
             const isRest = wo?.workoutType === 'Rest'
             const cfg = wo ? (WC[wo.workoutType] ?? WC.Rest) : null
             const hasEvent = !!wo && !isRest
-            const isClickable = !!(wo || ma || isPastOrToday)
+            const isClickable = !!(wo || sa || ma || isPastOrToday)
 
             return (
               <button
@@ -231,8 +238,28 @@ export function CalendarView({
                   </div>
                 )}
 
+                {/* Strava activity chip (no plan workout on this day) */}
+                {sa && (
+                  <div className="relative w-full rounded-[5px] px-1 pt-0.5 pb-1 border bg-orange-500/15 border-orange-500/25">
+                    <div className="flex items-center gap-0.5 min-w-0">
+                      <span className="text-[12px] leading-none flex-shrink-0" role="img">
+                        {ACTIVITY_EMOJI[sa.type] ?? '🎯'}
+                      </span>
+                      <p className="hidden sm:block text-[10px] font-semibold leading-tight truncate text-orange-300">
+                        {sa.type}
+                      </p>
+                    </div>
+                    {sa.distanceMeters > 0 && (
+                      <p className="hidden sm:block text-[10px] leading-tight truncate text-orange-300 opacity-55">
+                        {(sa.distanceMeters / 1000).toFixed(1)}k
+                      </p>
+                    )}
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400" />
+                  </div>
+                )}
+
                 {/* Manual activity chip (empty days only) */}
-                {!wo && ma && (
+                {!wo && !sa && ma && (
                   <div className="relative w-full rounded-[5px] px-1 pt-0.5 pb-1 border bg-cyan-500/15 border-cyan-500/25">
                     <div className="flex items-center gap-0.5 min-w-0">
                       <span className="text-[12px] leading-none flex-shrink-0" role="img">
@@ -250,7 +277,7 @@ export function CalendarView({
                 )}
 
                 {/* Empty past/today: faint + on hover */}
-                {!wo && !ma && isPastOrToday && (
+                {!wo && !sa && !ma && isPastOrToday && (
                   <div className="mt-auto opacity-0 group-hover:opacity-100 transition-opacity flex justify-center w-full pb-1">
                     <span className="text-gray-700 text-base leading-none">+</span>
                   </div>

@@ -39,7 +39,7 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: Nav
       if (!res.ok) {
         setSyncMsg({ error: data.error ?? 'Sync failed' })
       } else {
-        setSyncMsg({ info: `${data.activitiesFetched ?? 0} fetched, ${data.newOnCalendar ?? 0} added` })
+        setSyncMsg({ info: `${data.activitiesFetched ?? 0} activities synced` })
         router.refresh()
       }
     } catch {

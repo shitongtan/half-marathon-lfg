@@ -76,3 +76,11 @@ export interface ManualActivity {
   notes: string | null;
   workoutId: string | null;
 }
+
+export interface StravaDisplayActivity {
+  stravaId: string;
+  type: string;
+  startDate: string;
+  distanceMeters: number;
+  movingTimeSecs: number;
+}
