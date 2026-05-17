@@ -2,6 +2,8 @@ import { getSession } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import { refreshTokenIfNeeded, fetchRecentActivities } from "@/lib/strava";
 
+const RUN_WORKOUT_TYPES = new Set(["Easy Run", "Long Run", "Tempo", "Intervals", "Recovery"]);
+
 export async function POST() {
   const session = await getSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,7 +38,46 @@ export async function POST() {
     }, { onConflict: "stravaId", ignoreDuplicates: false });
   }
 
-  // Compute fitness metrics from recent runs
+  // Auto-complete matching plan workouts from Strava runs
+  const { data: plan } = await db
+    .from("TrainingPlan")
+    .select("id, TrainingWeek(id)")
+    .eq("userId", user.id)
+    .maybeSingle();
+
+  if (plan) {
+    const weekIds = ((plan.TrainingWeek ?? []) as { id: string }[]).map((w) => w.id);
+
+    if (weekIds.length > 0) {
+      for (const activity of runs) {
+        const dateStr = new Date(activity.start_date).toISOString().slice(0, 10);
+        const actualKm = parseFloat((activity.distance / 1000).toFixed(2));
+
+        const { data: workout } = await db
+          .from("Workout")
+          .select("id, workoutType, distanceKm")
+          .in("weekId", weekIds)
+          .gte("date", `${dateStr}T00:00:00.000Z`)
+          .lt("date", `${dateStr}T23:59:59.999Z`)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        if (!workout || !RUN_WORKOUT_TYPES.has(workout.workoutType)) continue;
+
+        // Accept if no target distance, or within 35% of target
+        const targetKm = workout.distanceKm as number | null;
+        if (targetKm !== null && Math.abs(actualKm - targetKm) / targetKm > 0.35) continue;
+
+        await db.from("Workout").update({
+          status: "completed",
+          actualDistanceKm: actualKm,
+          stravaActivityId: String(activity.id),
+        }).eq("id", workout.id);
+      }
+    }
+  }
+
+  // Recompute fitness metrics from recent runs
   const { data: recentRuns } = await db
     .from("StravaActivity")
     .select("avgPaceSecsPerKm")

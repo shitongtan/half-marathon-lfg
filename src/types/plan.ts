@@ -66,3 +66,13 @@ export interface ClaudePlanWorkout {
 export interface ClaudePlanResponse {
   weeks: ClaudePlanWeek[];
 }
+
+export interface ManualActivity {
+  id: string;
+  type: string;
+  startDate: string;
+  durationMins: number;
+  distanceKm: number | null;
+  notes: string | null;
+  workoutId: string | null;
+}

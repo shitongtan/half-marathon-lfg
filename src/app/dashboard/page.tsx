@@ -6,7 +6,7 @@ import { FitnessMetrics } from '@/components/dashboard/FitnessMetrics'
 import { StravaConnectBanner } from '@/components/dashboard/StravaConnectBanner'
 import { CalendarView } from '@/components/dashboard/CalendarView'
 import { GeneratePlanButton } from '@/components/dashboard/GeneratePlanButton'
-import type { WeekData, WorkoutDay, WorkoutType, WorkoutStatus } from '@/types/plan'
+import type { WeekData, WorkoutDay, WorkoutType, WorkoutStatus, ManualActivity } from '@/types/plan'
 import Link from 'next/link'
 
 export default async function DashboardPage() {
@@ -70,6 +70,21 @@ export default async function DashboardPage() {
   const totalWeeks = allWeeks.length || 15
   const weekNumber = currentWeekNumber
 
+  const { data: manualActivitiesRaw } = await db
+    .from('ManualActivity')
+    .select('id, type, startDate, durationMins, distanceKm, notes, workoutId')
+    .eq('userId', session.userId)
+
+  const manualActivities: ManualActivity[] = (manualActivitiesRaw ?? []).map((a: Record<string, unknown>) => ({
+    id: a.id as string,
+    type: a.type as string,
+    startDate: a.startDate as string,
+    durationMins: a.durationMins as number,
+    distanceKm: (a.distanceKm as number | null) ?? null,
+    notes: (a.notes as string | null) ?? null,
+    workoutId: (a.workoutId as string | null) ?? null,
+  }))
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <Navbar
@@ -118,7 +133,7 @@ export default async function DashboardPage() {
 
       {allWeeks.length > 0 && plan && (
         <div className="mt-6">
-          <CalendarView workouts={allWeeks.flatMap(w => w.workouts)} />
+          <CalendarView workouts={allWeeks.flatMap(w => w.workouts)} manualActivities={manualActivities} />
         </div>
       )}
     </div>

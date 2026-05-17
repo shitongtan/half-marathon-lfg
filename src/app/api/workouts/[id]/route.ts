@@ -11,7 +11,8 @@ export async function PATCH(request: Request, context: { params: Params }) {
 
   let body: {
     status?: string;
-    actualDistanceKm?: number;
+    actualDistanceKm?: number | null;
+    stravaActivityId?: string | null;
     workoutType?: string;
     coachNote?: string;
   };
@@ -21,15 +22,16 @@ export async function PATCH(request: Request, context: { params: Params }) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { status, actualDistanceKm, workoutType, coachNote } = body;
+  const { status, workoutType, coachNote } = body;
 
-  if (status !== undefined && status !== "completed" && status !== "missed") {
-    return Response.json({ error: "status must be 'completed' or 'missed'" }, { status: 400 });
+  if (status !== undefined && !["completed", "missed", "pending"].includes(status)) {
+    return Response.json({ error: "Invalid status" }, { status: 400 });
   }
 
   const updateData: Record<string, unknown> = {};
   if (status !== undefined) updateData.status = status;
-  if (actualDistanceKm !== undefined) updateData.actualDistanceKm = actualDistanceKm;
+  if ("actualDistanceKm" in body) updateData.actualDistanceKm = body.actualDistanceKm ?? null;
+  if ("stravaActivityId" in body) updateData.stravaActivityId = body.stravaActivityId ?? null;
   if (workoutType !== undefined) updateData.workoutType = workoutType;
   if (coachNote !== undefined) updateData.coachNote = coachNote;
 
