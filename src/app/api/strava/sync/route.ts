@@ -33,7 +33,7 @@ export async function POST() {
   // Upsert ALL activity types into StravaActivity (single source of truth for Strava data)
   for (const activity of activities) {
     const avgPaceSecsPerKm =
-      activity.type === "Run" && activity.distance > 0
+      activity.distance > 0
         ? Math.round(activity.moving_time / (activity.distance / 1000))
         : null;
 

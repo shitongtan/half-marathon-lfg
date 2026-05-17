@@ -47,6 +47,14 @@ function fmtPace(d: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function fmtDuration(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m ${s}s`
+}
+
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -59,6 +67,7 @@ function fmtDate(dateStr: string) {
 
 type Sel =
   | { kind: 'workout'; workout: WorkoutDay }
+  | { kind: 'strava'; activity: StravaDisplayActivity }
   | { kind: 'manual'; activity: ManualActivity }
   | { kind: 'empty'; date: string }
 
@@ -103,12 +112,14 @@ export function CalendarView({
 
   function selKey(s: Sel): string {
     if (s.kind === 'workout') return s.workout.date.slice(0, 10)
+    if (s.kind === 'strava') return s.activity.startDate.slice(0, 10)
     if (s.kind === 'manual') return s.activity.startDate.slice(0, 10)
     return s.date
   }
 
   function handleClick(ds: string) {
     const wo = byDate.get(ds)
+    const sa = byDateStrava.get(ds)
     const ma = byDateManual.get(ds)
     const alreadySel = sel !== null && selKey(sel) === ds
 
@@ -116,6 +127,8 @@ export function CalendarView({
 
     if (wo) {
       setSel({ kind: 'workout', workout: wo })
+    } else if (sa) {
+      setSel({ kind: 'strava', activity: sa })
     } else if (ma) {
       setSel({ kind: 'manual', activity: ma })
     } else if (ds <= todayStr) {
@@ -252,6 +265,7 @@ export function CalendarView({
                     {sa.distanceMeters > 0 && (
                       <p className="hidden sm:block text-[10px] leading-tight truncate text-orange-300 opacity-55">
                         {(sa.distanceMeters / 1000).toFixed(1)}k
+                        {sa.avgPaceSecsPerKm ? ` · ${fmtPace(sa.avgPaceSecsPerKm / 60)}/k` : ''}
                       </p>
                     )}
                     <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400" />
@@ -302,6 +316,9 @@ export function CalendarView({
 
       {sel?.kind === 'workout' && (
         <WorkoutModal workout={sel.workout} allWorkouts={workouts} onClose={() => setSel(null)} />
+      )}
+      {sel?.kind === 'strava' && (
+        <StravaActivityModal activity={sel.activity} onClose={() => setSel(null)} />
       )}
       {sel?.kind === 'manual' && (
         <ActivityModal date={sel.activity.startDate} activity={sel.activity} onClose={() => setSel(null)} />
@@ -591,6 +608,81 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
             onCancel={() => setShowLog(false)}
           />
         )}
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Strava activity detail modal ───────────────────────────────────────────
+
+function StravaActivityModal({ activity, onClose }: {
+  activity: StravaDisplayActivity
+  onClose: () => void
+}) {
+  const distKm = activity.distanceMeters / 1000
+  const hasDistance = activity.distanceMeters > 0
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="flex items-start justify-between px-5 pt-4 pb-3">
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-gray-500 uppercase tracking-widest font-medium">{fmtDate(activity.startDate)}</p>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[13px] font-semibold border bg-orange-500/15 border-orange-500/25 text-orange-300">
+            <span className="text-base leading-none">{ACTIVITY_EMOJI[activity.type] ?? '🎯'}</span>
+            {activity.type}
+          </span>
+        </div>
+        <CloseButton onClose={onClose} />
+      </div>
+
+      {activity.name && activity.name !== activity.type && (
+        <div className="px-5 pb-2">
+          <p className="text-base font-semibold text-white">{activity.name}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-6 px-5 pb-4">
+        {hasDistance && (
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-0.5">Distance</p>
+            <p className="text-2xl font-bold text-white tabular-nums">
+              {distKm.toFixed(2)}<span className="text-sm font-normal text-gray-500 ml-0.5">km</span>
+            </p>
+          </div>
+        )}
+        <div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-0.5">Duration</p>
+          <p className="text-2xl font-bold text-white tabular-nums">
+            {fmtDuration(activity.movingTimeSecs)}
+          </p>
+        </div>
+        {activity.avgPaceSecsPerKm != null && hasDistance && (
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-0.5">Pace</p>
+            <p className="text-2xl font-bold text-white tabular-nums">
+              {fmtPace(activity.avgPaceSecsPerKm / 60)}<span className="text-sm font-normal text-gray-500">/km</span>
+            </p>
+          </div>
+        )}
+      </div>
+
+      {activity.avgHeartRate != null && (
+        <>
+          <div className="h-px bg-white/5" />
+          <div className="px-5 py-3">
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-0.5">Avg Heart Rate</p>
+            <p className="text-lg font-bold text-white tabular-nums">
+              {Math.round(activity.avgHeartRate)}<span className="text-sm font-normal text-gray-500 ml-0.5">bpm</span>
+            </p>
+          </div>
+        </>
+      )}
+
+      <div className="px-5 pb-5 pt-2">
+        <div className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-orange-500/10 border border-orange-500/20">
+          <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0" />
+          <span className="text-orange-400 text-sm font-semibold">Synced from Strava</span>
+        </div>
       </div>
     </Modal>
   )

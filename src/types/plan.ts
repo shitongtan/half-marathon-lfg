@@ -79,8 +79,11 @@ export interface ManualActivity {
 
 export interface StravaDisplayActivity {
   stravaId: string;
+  name: string;
   type: string;
   startDate: string;
   distanceMeters: number;
   movingTimeSecs: number;
+  avgPaceSecsPerKm: number | null;
+  avgHeartRate: number | null;
 }

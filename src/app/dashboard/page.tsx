@@ -94,17 +94,20 @@ export default async function DashboardPage() {
 
   const { data: stravaRaw } = await db
     .from('StravaActivity')
-    .select('stravaId, type, startDate, distanceMeters, movingTimeSecs')
+    .select('stravaId, name, type, startDate, distanceMeters, movingTimeSecs, avgPaceSecsPerKm, avgHeartRate')
     .eq('userId', session.userId)
 
   const stravaActivities: StravaDisplayActivity[] = (stravaRaw ?? [])
     .filter((a: Record<string, unknown>) => !matchedStravaIds.has(a.stravaId as string))
     .map((a: Record<string, unknown>) => ({
       stravaId: a.stravaId as string,
+      name: (a.name as string) || (a.type as string),
       type: a.type as string,
       startDate: a.startDate as string,
       distanceMeters: a.distanceMeters as number,
       movingTimeSecs: a.movingTimeSecs as number,
+      avgPaceSecsPerKm: (a.avgPaceSecsPerKm as number | null) ?? null,
+      avgHeartRate: (a.avgHeartRate as number | null) ?? null,
     }))
 
   return (
