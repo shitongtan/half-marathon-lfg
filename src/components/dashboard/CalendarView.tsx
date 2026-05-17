@@ -288,7 +288,8 @@ export function CalendarView({
 
 // ─── Workout detail modal ────────────────────────────────────────────────────
 
-const WEEK_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// Sun=0 … Sat=6, matching JS getDay() and the calendar grid
+const WEEK_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function WorkoutModal({ workout, allWorkouts, onClose }: {
   workout: WorkoutDay
@@ -310,17 +311,16 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
   const today0 = new Date(); today0.setHours(0, 0, 0, 0)
   const isPastOrToday = wDate <= today0
 
-  // Compute the Mon–Sun week this workout belongs to (plan dayOfWeek: 0=Mon…6=Sun)
+  // Compute the Sun–Sat week this workout belongs to (matches the calendar grid)
   const currentDateStr = workout.date.slice(0, 10)
   const jsDay = wDate.getDay() // 0=Sun…6=Sat
-  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay
-  const weekStart = new Date(wDate)
-  weekStart.setDate(wDate.getDate() + mondayOffset)
+  const sundayStart = new Date(wDate)
+  sundayStart.setDate(wDate.getDate() - jsDay) // rewind to Sunday
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
-    d.setDate(weekStart.getDate() + i)
-    return { date: d, dateStr: localDateStr(d), planDayOfWeek: i }
+    const d = new Date(sundayStart)
+    d.setDate(sundayStart.getDate() + i)
+    return { date: d, dateStr: localDateStr(d), jsDay: i } // i=0 Sun … 6=Sat
   })
 
   const weekWorkoutMap = new Map<string, WorkoutDay>()
@@ -329,24 +329,23 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
     if (weekDays.some(wd => wd.dateStr === ds)) weekWorkoutMap.set(ds, w)
   }
 
-  async function handleMove(targetDateStr: string, targetPlanDayOfWeek: number) {
+  async function handleMove(targetDateStr: string, targetJsDay: number) {
     setMoving(true)
     const targetWorkout = weekWorkoutMap.get(targetDateStr)
+    // plan dayOfWeek: 0=Mon…6=Sun → convert from JS getDay (0=Sun)
+    const toPlanDay = (d: number) => d === 0 ? 6 : d - 1
 
-    // Move this workout to the target date
     await fetch(`/api/workouts/${workout.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: targetDateStr, dayOfWeek: targetPlanDayOfWeek }),
+      body: JSON.stringify({ date: targetDateStr, dayOfWeek: toPlanDay(targetJsDay) }),
     })
 
-    // If target had a Rest day, swap it back to the current slot
     if (targetWorkout?.workoutType === 'Rest') {
-      const currentPlanDay = weekDays.find(wd => wd.dateStr === currentDateStr)?.planDayOfWeek ?? 0
       await fetch(`/api/workouts/${targetWorkout.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: currentDateStr, dayOfWeek: currentPlanDay }),
+        body: JSON.stringify({ date: currentDateStr, dayOfWeek: toPlanDay(jsDay) }),
       })
     }
 
@@ -467,7 +466,7 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
         <div className="px-5 pb-3">
           <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-2">Move to</p>
           <div className="grid grid-cols-7 gap-1">
-            {weekDays.map(({ dateStr, planDayOfWeek }) => {
+            {weekDays.map(({ dateStr, jsDay }) => {
               const isCurrentDay = dateStr === currentDateStr
               const existing = weekWorkoutMap.get(dateStr)
               const isOccupied = !!existing && existing.workoutType !== 'Rest' && !isCurrentDay
@@ -477,8 +476,8 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
                 <button
                   key={dateStr}
                   disabled={disabled}
-                  onClick={() => !disabled && handleMove(dateStr, planDayOfWeek)}
-                  title={isOccupied ? `${existing?.workoutType} already here` : WEEK_DAY_LABELS[planDayOfWeek]}
+                  onClick={() => !disabled && handleMove(dateStr, jsDay)}
+                  title={isOccupied ? `${existing?.workoutType} already here` : WEEK_DAY_LABELS[jsDay]}
                   className={[
                     'py-1.5 rounded-lg text-[10px] font-medium border transition-all',
                     isCurrentDay
@@ -489,7 +488,7 @@ function WorkoutModal({ workout, allWorkouts, onClose }: {
                     moving ? 'opacity-50' : '',
                   ].join(' ')}
                 >
-                  {WEEK_DAY_LABELS[planDayOfWeek]}
+                  {WEEK_DAY_LABELS[jsDay]}
                 </button>
               )
             })}

@@ -15,7 +15,7 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: Nav
   const router = useRouter()
   const [syncing, setSyncing] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncMsg, setSyncMsg] = useState<{ error?: string; info?: string } | null>(null)
 
   async function handleRegenerate() {
     if (!confirm('This will delete your current plan and all logged progress. Regenerate?')) return
@@ -32,17 +32,18 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: Nav
 
   async function handleSync() {
     setSyncing(true)
-    setSyncError(null)
+    setSyncMsg(null)
     try {
       const res = await fetch('/api/strava/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        setSyncError(data.error ?? 'Sync failed')
+        setSyncMsg({ error: data.error ?? 'Sync failed' })
       } else {
+        setSyncMsg({ info: `${data.activitiesFetched ?? 0} fetched, ${data.newOnCalendar ?? 0} added` })
         router.refresh()
       }
     } catch {
-      setSyncError('Network error — try again')
+      setSyncMsg({ error: 'Network error — try again' })
     } finally {
       setSyncing(false)
     }
@@ -111,8 +112,10 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: Nav
         </div>
       </div>
 
-      {syncError && (
-        <p className="text-xs text-red-400 text-right">{syncError}</p>
+      {syncMsg && (
+        <p className={`text-xs text-right ${syncMsg.error ? 'text-red-400' : 'text-gray-500'}`}>
+          {syncMsg.error ?? syncMsg.info}
+        </p>
       )}
     </nav>
   )
