@@ -7,7 +7,7 @@ const MONTHS = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
 ]
-const DAY_HEADERS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+const DAY_HEADERS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 const CROSS_TRAIN_TYPES = ['Cycling','Swimming','Yoga','Strength','Pilates','Rowing','HIIT','Other']
 
 type WCfg = { bg: string; text: string; dot: string; border: string; abbr: string }
@@ -60,7 +60,7 @@ export function CalendarView({
 
   const firstDay = new Date(yr, mo, 1)
   const daysInMo = new Date(yr, mo + 1, 0).getDate()
-  const startOff = (firstDay.getDay() + 6) % 7
+  const startOff = firstDay.getDay() // 0=Sun, 1=Mon … 6=Sat
 
   const cells: (Date | null)[] = [
     ...Array(startOff).fill(null),
@@ -185,9 +185,11 @@ export function CalendarView({
                     <p className={`text-[10px] sm:text-[11px] font-semibold leading-tight truncate ${cfg.text}`}>
                       {cfg.abbr}
                     </p>
-                    {wo.distanceKm && (
+                    {(wo.distanceKm || wo.targetPaceMin) && (
                       <p className={`hidden sm:block text-[10px] leading-tight truncate ${cfg.text} opacity-55`}>
-                        {wo.distanceKm.toFixed(1)} km
+                        {wo.distanceKm ? `${wo.distanceKm.toFixed(1)}k` : ''}
+                        {wo.distanceKm && wo.targetPaceMin ? ' · ' : ''}
+                        {wo.targetPaceMin ? `${fmtPace(wo.targetPaceMin)}/k` : ''}
                       </p>
                     )}
                     {wo.status === 'completed' && (

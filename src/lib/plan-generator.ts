@@ -3,6 +3,11 @@ import type { ClaudePlanResponse, ClaudePlanWeek, ClaudePlanWorkout, WorkoutType
 // Hal Higdon Novice 2 inspired 15-week half-marathon plan
 // Weeks 1-5: Base, 6-10: Build (tempo introduced), 11-13: Peak, 14: Taper, 15: Race
 
+// Long runs are capped at this absolute distance regardless of scale factor.
+// Research consistently shows no benefit (and increased injury risk) above 18km
+// for half-marathon training. Most plans peak at 16–18km.
+const LONG_RUN_CAP_KM = 18;
+
 interface WeekTemplate {
   focus: string;
   notes: string;
@@ -12,11 +17,14 @@ interface WeekTemplate {
 interface DayTemplate {
   dayOfWeek: number; // 0=Mon
   workoutType: WorkoutType;
-  distanceKm?: number; // relative to long run scale factor
+  distanceKm?: number; // relative multiplier applied to BASE_LONG_KM / BASE_EASY_KM etc.
   durationMins?: number; // for cross-train
   role: "easy" | "tempo" | "long" | "recovery" | "rest" | "cross" | "race";
 }
 
+// Long run multipliers are calibrated so that at scaleFactor=1.0 the plan produces:
+// W1=6km, W3=8km, W7=11km, W12=18km (peak), W13=12km (taper start)
+// This keeps the peak within the 16–18km benchmark range and starts conservatively.
 const WEEK_TEMPLATES: WeekTemplate[] = [
   // Week 1 — Base
   {
@@ -29,7 +37,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 30 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.7 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.0 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 0.75 },
     ],
   },
   // Week 2 — Base
@@ -43,7 +51,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 30 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.8 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.15 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 0.875 },
     ],
   },
   // Week 3 — Base
@@ -57,7 +65,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 35 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.8 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.35 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.0 },
     ],
   },
   // Week 4 — Cutback
@@ -71,7 +79,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 30 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.6 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.0 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 0.75 },
     ],
   },
   // Week 5 — Build
@@ -85,7 +93,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 35 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.9 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.5 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.125 },
     ],
   },
   // Week 6 — Build (first tempo)
@@ -99,7 +107,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 35 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.9 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.65 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.25 },
     ],
   },
   // Week 7 — Build
@@ -113,7 +121,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 40 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 1.0 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.8 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.375 },
     ],
   },
   // Week 8 — Cutback
@@ -127,7 +135,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 30 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.7 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.5 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.125 },
     ],
   },
   // Week 9 — Peak build
@@ -141,7 +149,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 40 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 1.0 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.0 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.625 },
     ],
   },
   // Week 10 — Peak
@@ -155,13 +163,13 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 40 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 1.0 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.2 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.875 },
     ],
   },
   // Week 11 — Peak
   {
     focus: "Peak Phase",
-    notes: "You're near your training peak. This week includes your biggest long run yet — approach it like a mini race. Start slow, finish strong. Practice taking water/gels if you plan to on race day.",
+    notes: "You're near your training peak. This week includes your longest long run yet — approach it like a mini race. Start slow, finish strong. Practice taking water/gels if you plan to on race day.",
     days: [
       { dayOfWeek: 0, workoutType: "Easy Run", role: "easy", distanceKm: 1.6 },
       { dayOfWeek: 1, workoutType: "Rest", role: "rest" },
@@ -169,10 +177,10 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 40 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 1.0 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.4 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.0 },
     ],
   },
-  // Week 12 — Peak (longest long run)
+  // Week 12 — Peak (longest long run, hard-capped at 18km)
   {
     focus: "Peak Phase",
     notes: "Peak week — your longest long run of the entire training block. After this, it's all downhill to race day. Complete this and you'll know you can finish the half. Run the last 3km at goal pace.",
@@ -183,7 +191,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 40 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 1.1 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.6 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 2.25 },
     ],
   },
   // Week 13 — Taper begins
@@ -197,7 +205,7 @@ const WEEK_TEMPLATES: WeekTemplate[] = [
       { dayOfWeek: 3, workoutType: "Cross-Train", role: "cross", durationMins: 30 },
       { dayOfWeek: 4, workoutType: "Rest", role: "rest" },
       { dayOfWeek: 5, workoutType: "Recovery", role: "recovery", distanceKm: 0.8 },
-      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.8 },
+      { dayOfWeek: 6, workoutType: "Long Run", role: "long", distanceKm: 1.5 },
     ],
   },
   // Week 14 — Full taper
@@ -281,7 +289,7 @@ function addDays(date: Date, days: number): Date {
   return d;
 }
 
-// Base distances (km) for a casual runner starting point
+// Base distances (km) for a runner at scaleFactor=1.0
 const BASE_EASY_KM = 5;
 const BASE_LONG_KM = 8;
 const BASE_TEMPO_KM = 4;
@@ -295,7 +303,12 @@ function resolveDistance(
 
   switch (template.role) {
     case "long":
-      return Math.round(BASE_LONG_KM * template.distanceKm * scaleFactor * 10) / 10;
+      // Hard cap: research shows no benefit above 18km for half-marathon training,
+      // and injury risk rises sharply. Even experienced runners shouldn't exceed this.
+      return Math.min(
+        LONG_RUN_CAP_KM,
+        Math.round(BASE_LONG_KM * template.distanceKm * scaleFactor * 10) / 10
+      );
     case "easy":
       return Math.round(BASE_EASY_KM * template.distanceKm * scaleFactor * 10) / 10;
     case "tempo":
@@ -317,7 +330,6 @@ function resolvePace(
 
   switch (role) {
     case "easy":
-      // Easy = current pace + 45-60s/km, expressed as min/km decimal
       return {
         min: (avgPaceSecsPerKm + 40) / 60,
         max: (avgPaceSecsPerKm + 65) / 60,
@@ -328,7 +340,6 @@ function resolvePace(
         max: (avgPaceSecsPerKm + 90) / 60,
       };
     case "tempo":
-      // Tempo = current pace - 15-25s/km
       return {
         min: (avgPaceSecsPerKm - 25) / 60,
         max: (avgPaceSecsPerKm - 10) / 60,
@@ -339,7 +350,6 @@ function resolvePace(
         max: (avgPaceSecsPerKm + 80) / 60,
       };
     case "race":
-      // Race pace roughly = tempo pace
       return {
         min: (avgPaceSecsPerKm - 20) / 60,
         max: (avgPaceSecsPerKm + 10) / 60,
@@ -352,18 +362,33 @@ function resolvePace(
 export function generatePlan(params: {
   avgPaceSecsPerKm: number | null;
   weeklyMileageKm: number | null;
+  longestRecentRunKm?: number | null;
   startDate: string;
   raceDate: string;
 }): ClaudePlanResponse {
-  const { startDate, raceDate } = params;
+  const { startDate } = params;
 
-  // Default to a casual runner if no Strava data
   const avgPace = params.avgPaceSecsPerKm ?? 390; // ~6:30/km default
   const weeklyMileage = params.weeklyMileageKm ?? 12;
 
-  // Scale factor: ratio of user's current weekly mileage to our template base (~24km)
-  // Clamped between 0.6 and 1.4 to keep plan sane
-  const scaleFactor = Math.min(1.4, Math.max(0.6, weeklyMileage / 24));
+  // Base scale from weekly mileage, clamped to a sane range
+  let scaleFactor = Math.min(1.4, Math.max(0.6, weeklyMileage / 24));
+
+  // Secondary constraint: if the runner's longest recent run is below the
+  // week-1 long run we'd assign, scale down so week 1 starts at ~80% of
+  // their proven distance. This protects injury-prone runners who have high
+  // weekly mileage but haven't yet run long.
+  const longestRunKm = params.longestRecentRunKm ?? null;
+  if (longestRunKm !== null) {
+    // Week 1 long run at current scale = BASE_LONG_KM * 0.75 * scaleFactor
+    const week1Long = BASE_LONG_KM * 0.75 * scaleFactor;
+    const safeMax = longestRunKm * 0.8;
+    if (week1Long > safeMax) {
+      // Back-solve: BASE_LONG_KM * 0.75 * newScale = safeMax
+      const constrainedScale = safeMax / (BASE_LONG_KM * 0.75);
+      scaleFactor = Math.max(0.5, Math.min(scaleFactor, constrainedScale));
+    }
+  }
 
   const start = new Date(startDate);
   const weeks: ClaudePlanWeek[] = [];

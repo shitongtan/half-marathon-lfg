@@ -16,6 +16,17 @@ export async function POST(): Promise<Response> {
   if (!user) return Response.json({ error: "User not found" }, { status: 404 });
   if (!user.stravaAthleteId) return Response.json({ error: "Connect Strava first" }, { status: 400 });
 
+  const { data: longestRunRow } = await db
+    .from("StravaActivity")
+    .select("distanceMeters")
+    .eq("userId", user.id)
+    .eq("type", "Run")
+    .order("distanceMeters", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const longestRecentRunKm = longestRunRow ? longestRunRow.distanceMeters / 1000 : null;
+
   // Start date: next Monday on or after today
   const today = new Date();
   const day = today.getDay();
@@ -28,6 +39,7 @@ export async function POST(): Promise<Response> {
   const plan = generatePlan({
     avgPaceSecsPerKm: user.avgPaceSecsPerKm,
     weeklyMileageKm: user.weeklyMileageKm,
+    longestRecentRunKm,
     startDate,
     raceDate,
   });
