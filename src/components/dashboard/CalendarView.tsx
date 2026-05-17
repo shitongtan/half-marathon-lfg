@@ -3,6 +3,26 @@
 import { useState } from 'react'
 import type { WorkoutDay, ManualActivity } from '@/types/plan'
 
+const ACTIVITY_EMOJI: Record<string, string> = {
+  'Easy Run':   '🏃',
+  'Long Run':   '🏃',
+  'Tempo':      '⚡',
+  'Intervals':  '🔥',
+  'Recovery':   '🌊',
+  'Cross-Train':'💪',
+  'Rest':       '💤',
+  'Walk':       '🚶',
+  'Hike':       '🥾',
+  'Cycling':    '🚴',
+  'Swimming':   '🏊',
+  'Strength':   '🏋️',
+  'Yoga':       '🧘',
+  'Pilates':    '🧘',
+  'Rowing':     '🚣',
+  'HIIT':       '🔥',
+  'Other':      '🎯',
+}
+
 const MONTHS = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
@@ -186,9 +206,14 @@ export function CalendarView({
                 {/* Plan workout chip */}
                 {hasEvent && cfg && (
                   <div className={`relative w-full rounded-[5px] px-1 pt-0.5 pb-1 border ${cfg.bg} ${cfg.border}`}>
-                    <p className={`text-[10px] sm:text-[11px] font-semibold leading-tight truncate ${cfg.text}`}>
-                      {cfg.abbr}
-                    </p>
+                    <div className="flex items-center gap-0.5 min-w-0">
+                      <span className="text-[12px] leading-none flex-shrink-0" role="img">
+                        {ACTIVITY_EMOJI[wo.workoutType] ?? '•'}
+                      </span>
+                      <p className={`hidden sm:block text-[10px] font-semibold leading-tight truncate ${cfg.text}`}>
+                        {cfg.abbr}
+                      </p>
+                    </div>
                     {(wo.distanceKm || wo.targetPaceMin) && (
                       <p className={`hidden sm:block text-[10px] leading-tight truncate ${cfg.text} opacity-55`}>
                         {wo.distanceKm ? `${wo.distanceKm.toFixed(1)}k` : ''}
@@ -208,9 +233,14 @@ export function CalendarView({
                 {/* Manual activity chip (empty days only) */}
                 {!wo && ma && (
                   <div className="relative w-full rounded-[5px] px-1 pt-0.5 pb-1 border bg-cyan-500/15 border-cyan-500/25">
-                    <p className="text-[10px] sm:text-[11px] font-semibold leading-tight truncate text-cyan-300">
-                      {ma.type}
-                    </p>
+                    <div className="flex items-center gap-0.5 min-w-0">
+                      <span className="text-[12px] leading-none flex-shrink-0" role="img">
+                        {ACTIVITY_EMOJI[ma.type] ?? '🎯'}
+                      </span>
+                      <p className="hidden sm:block text-[10px] font-semibold leading-tight truncate text-cyan-300">
+                        {ma.type}
+                      </p>
+                    </div>
                     <p className="hidden sm:block text-[10px] leading-tight truncate text-cyan-300 opacity-55">
                       {ma.durationMins} min
                     </p>
@@ -234,9 +264,9 @@ export function CalendarView({
           {Object.entries(WC)
             .filter(([k]) => k !== 'Rest')
             .map(([type, c]) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
-                <span className="text-[11px] text-gray-600">{type}</span>
+              <div key={type} className="flex items-center gap-1">
+                <span className="text-[11px] leading-none" role="img">{ACTIVITY_EMOJI[type] ?? '•'}</span>
+                <span className={`text-[11px] ${c.text} opacity-60`}>{type}</span>
               </div>
             ))}
         </div>

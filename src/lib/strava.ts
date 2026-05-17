@@ -66,14 +66,20 @@ export async function refreshTokenIfNeeded(user: {
   return data.access_token;
 }
 
-export async function fetchRecentActivities(
-  accessToken: string,
-  afterUnixSecs: number
-): Promise<StravaActivitySummary[]> {
-  const response = await fetch(
-    `https://www.strava.com/api/v3/athlete/activities?per_page=50&after=${afterUnixSecs}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  if (!response.ok) throw new Error(`Strava activities fetch failed: ${response.status}`);
-  return response.json() as Promise<StravaActivitySummary[]>;
+export async function fetchAllActivities(accessToken: string): Promise<StravaActivitySummary[]> {
+  const all: StravaActivitySummary[] = [];
+  let page = 1;
+  while (true) {
+    const response = await fetch(
+      `https://www.strava.com/api/v3/athlete/activities?per_page=200&page=${page}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!response.ok) throw new Error(`Strava activities fetch failed: ${response.status}`);
+    const batch = (await response.json()) as StravaActivitySummary[];
+    if (!batch.length) break;
+    all.push(...batch);
+    if (batch.length < 200 || all.length >= 2000) break;
+    page++;
+  }
+  return all;
 }

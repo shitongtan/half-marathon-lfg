@@ -1,6 +1,6 @@
 import { getSession } from "@/lib/session";
 import { db } from "@/lib/supabase";
-import { refreshTokenIfNeeded, fetchRecentActivities } from "@/lib/strava";
+import { refreshTokenIfNeeded, fetchAllActivities } from "@/lib/strava";
 
 const RUN_WORKOUT_TYPES = new Set(["Easy Run", "Long Run", "Tempo", "Intervals", "Recovery"]);
 
@@ -30,8 +30,7 @@ export async function POST() {
 
   const accessToken = await refreshTokenIfNeeded(user);
 
-  const afterUnixSecs = Math.floor(Date.now() / 1000) - 90 * 24 * 3600;
-  const activities = await fetchRecentActivities(accessToken, afterUnixSecs);
+  const activities = await fetchAllActivities(accessToken);
   const runs = activities.filter((a) => a.type === "Run");
 
   for (const activity of runs) {
