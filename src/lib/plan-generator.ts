@@ -324,36 +324,37 @@ function resolveDistance(
 
 function resolvePace(
   role: string,
-  avgPaceSecsPerKm: number
+  avgPaceSecsPerKm: number,
+  thresholdPaceSecsPerKm?: number | null
 ): { min: number; max: number } | null {
   if (role === "rest" || role === "cross") return null;
 
+  // Threshold-anchored pacing (more accurate when available).
+  // Threshold = pace sustainable for ~20–40 min at "comfortably hard" effort.
+  if (thresholdPaceSecsPerKm) {
+    const T = thresholdPaceSecsPerKm;
+    switch (role) {
+      case "easy":     return { min: (T + 75) / 60, max: (T + 105) / 60 };
+      case "recovery": return { min: (T + 100) / 60, max: (T + 135) / 60 };
+      case "long":     return { min: (T + 80) / 60, max: (T + 110) / 60 };
+      case "tempo":    return { min: (T - 5) / 60,  max: (T + 10) / 60 };
+      case "race":     return { min: (T + 15) / 60, max: (T + 45) / 60 };
+      default:         return null;
+    }
+  }
+
+  // Fallback: anchor to Strava average pace
   switch (role) {
     case "easy":
-      return {
-        min: (avgPaceSecsPerKm + 40) / 60,
-        max: (avgPaceSecsPerKm + 65) / 60,
-      };
+      return { min: (avgPaceSecsPerKm + 40) / 60, max: (avgPaceSecsPerKm + 65) / 60 };
     case "recovery":
-      return {
-        min: (avgPaceSecsPerKm + 60) / 60,
-        max: (avgPaceSecsPerKm + 90) / 60,
-      };
+      return { min: (avgPaceSecsPerKm + 60) / 60, max: (avgPaceSecsPerKm + 90) / 60 };
     case "tempo":
-      return {
-        min: (avgPaceSecsPerKm - 25) / 60,
-        max: (avgPaceSecsPerKm - 10) / 60,
-      };
+      return { min: (avgPaceSecsPerKm - 25) / 60, max: (avgPaceSecsPerKm - 10) / 60 };
     case "long":
-      return {
-        min: (avgPaceSecsPerKm + 50) / 60,
-        max: (avgPaceSecsPerKm + 80) / 60,
-      };
+      return { min: (avgPaceSecsPerKm + 50) / 60, max: (avgPaceSecsPerKm + 80) / 60 };
     case "race":
-      return {
-        min: (avgPaceSecsPerKm - 20) / 60,
-        max: (avgPaceSecsPerKm + 10) / 60,
-      };
+      return { min: (avgPaceSecsPerKm - 20) / 60, max: (avgPaceSecsPerKm + 10) / 60 };
     default:
       return null;
   }
@@ -363,12 +364,14 @@ export function generatePlan(params: {
   avgPaceSecsPerKm: number | null;
   weeklyMileageKm: number | null;
   longestRecentRunKm?: number | null;
+  thresholdPaceSecsPerKm?: number | null;
   startDate: string;
   raceDate: string;
 }): ClaudePlanResponse {
   const { startDate } = params;
 
   const avgPace = params.avgPaceSecsPerKm ?? 390; // ~6:30/km default
+  const thresholdPace = params.thresholdPaceSecsPerKm ?? null;
   const weeklyMileage = params.weeklyMileageKm ?? 12;
 
   // Base scale from weekly mileage, clamped to a sane range
@@ -403,7 +406,7 @@ export function generatePlan(params: {
         day.role === "rest" || day.role === "cross"
           ? null
           : resolveDistance(day, scaleFactor);
-      const pace = resolvePace(day.role, avgPace);
+      const pace = resolvePace(day.role, avgPace, thresholdPace);
       const round2 = (n: number) => Math.round(n * 100) / 100;
 
       return {

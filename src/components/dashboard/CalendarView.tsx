@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { WorkoutDay, ManualActivity } from '@/types/plan'
 
 const ACTIVITY_EMOJI: Record<string, string> = {
+  'Run':        '🏃',
   'Easy Run':   '🏃',
   'Long Run':   '🏃',
   'Tempo':      '⚡',

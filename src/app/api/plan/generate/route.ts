@@ -27,6 +27,30 @@ export async function POST(): Promise<Response> {
 
   const longestRecentRunKm = longestRunRow ? longestRunRow.distanceMeters / 1000 : null;
 
+  // Estimate threshold pace from fastest medium-distance runs (2–15km).
+  // These efforts are most likely to reflect lactate-threshold intensity.
+  const { data: fastRunRows } = await db
+    .from("StravaActivity")
+    .select("avgPaceSecsPerKm")
+    .eq("userId", user.id)
+    .eq("type", "Run")
+    .gte("distanceMeters", 2000)
+    .lte("distanceMeters", 15000)
+    .not("avgPaceSecsPerKm", "is", null)
+    .order("avgPaceSecsPerKm", { ascending: true })
+    .limit(3);
+
+  let thresholdPaceSecsPerKm: number | null = null;
+  const fastPaces = (fastRunRows ?? []).map((r) => r.avgPaceSecsPerKm as number).filter(Boolean);
+  if (fastPaces.length > 0) {
+    const candidate = Math.round(fastPaces.reduce((s, p) => s + p, 0) / fastPaces.length);
+    // Only use if at least 5% faster than avg pace (otherwise it's just another easy run)
+    const avgPace = user.avgPaceSecsPerKm ?? 420;
+    if (candidate < avgPace * 0.95) {
+      thresholdPaceSecsPerKm = candidate;
+    }
+  }
+
   // Start date: next Monday on or after today
   const today = new Date();
   const day = today.getDay();
@@ -40,6 +64,7 @@ export async function POST(): Promise<Response> {
     avgPaceSecsPerKm: user.avgPaceSecsPerKm,
     weeklyMileageKm: user.weeklyMileageKm,
     longestRecentRunKm,
+    thresholdPaceSecsPerKm,
     startDate,
     raceDate,
   });

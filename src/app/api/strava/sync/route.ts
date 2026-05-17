@@ -5,6 +5,7 @@ import { refreshTokenIfNeeded, fetchAllActivities } from "@/lib/strava";
 const RUN_WORKOUT_TYPES = new Set(["Easy Run", "Long Run", "Tempo", "Intervals", "Recovery"]);
 
 const STRAVA_TYPE_MAP: Record<string, string> = {
+  Run: "Run",
   Walk: "Walk",
   Hike: "Hike",
   Ride: "Cycling",
@@ -29,31 +30,49 @@ export async function POST() {
   if (!user.stravaAthleteId) return Response.json({ error: "Strava not connected" }, { status: 400 });
 
   const accessToken = await refreshTokenIfNeeded(user);
-
   const activities = await fetchAllActivities(accessToken);
   const runs = activities.filter((a) => a.type === "Run");
 
+  // Upsert all runs into StravaActivity (for fitness metrics + pace history)
   for (const activity of runs) {
     const avgPaceSecsPerKm =
       activity.distance > 0
         ? Math.round(activity.moving_time / (activity.distance / 1000))
         : null;
 
-    await db.from("StravaActivity").upsert({
-      id: crypto.randomUUID(),
-      stravaId: activity.id.toString(),
-      userId: user.id,
-      name: activity.name,
-      type: activity.type,
-      startDate: new Date(activity.start_date).toISOString(),
-      distanceMeters: activity.distance,
-      movingTimeSecs: activity.moving_time,
-      avgPaceSecsPerKm,
-      avgHeartRate: activity.average_heartrate ?? null,
-    }, { onConflict: "stravaId", ignoreDuplicates: false });
+    await db.from("StravaActivity").upsert(
+      {
+        id: crypto.randomUUID(),
+        stravaId: activity.id.toString(),
+        userId: user.id,
+        name: activity.name,
+        type: activity.type,
+        startDate: new Date(activity.start_date).toISOString(),
+        distanceMeters: activity.distance,
+        movingTimeSecs: activity.moving_time,
+        avgPaceSecsPerKm,
+        avgHeartRate: activity.average_heartrate ?? null,
+      },
+      { onConflict: "stravaId", ignoreDuplicates: false }
+    );
   }
 
-  // Auto-complete matching plan workouts from Strava runs
+  // Fetch existing strava-synced ManualActivities to avoid duplicates
+  const { data: existingManual } = await db
+    .from("ManualActivity")
+    .select("notes")
+    .eq("userId", user.id)
+    .like("notes", "strava:%");
+
+  const existingStravaIds = new Set(
+    (existingManual ?? [])
+      .map((m: { notes: string | null }) => m.notes?.replace("strava:", ""))
+      .filter(Boolean)
+  );
+
+  // Match runs to plan workouts; track which runs were consumed by the plan
+  const matchedStravaIds = new Set<string>();
+
   const { data: plan } = await db
     .from("TrainingPlan")
     .select("id, TrainingWeek(id)")
@@ -79,7 +98,6 @@ export async function POST() {
 
         if (!workout || !RUN_WORKOUT_TYPES.has(workout.workoutType)) continue;
 
-        // Accept if no target distance, or within 35% of target
         const targetKm = workout.distanceKm as number | null;
         if (targetKm !== null && Math.abs(actualKm - targetKm) / targetKm > 0.35) continue;
 
@@ -88,42 +106,34 @@ export async function POST() {
           actualDistanceKm: actualKm,
           stravaActivityId: String(activity.id),
         }).eq("id", workout.id);
+
+        matchedStravaIds.add(String(activity.id));
       }
     }
   }
 
-  // Sync non-run activities (walks, hikes, cross-training) as ManualActivity
+  // Save all activities NOT matched to a plan workout as ManualActivity.
+  // This makes every Strava activity visible on the calendar.
+  const unmatchedRuns = runs.filter((a) => !matchedStravaIds.has(String(a.id)));
   const nonRunActivities = activities.filter((a) => a.type !== "Run");
-  if (nonRunActivities.length > 0) {
-    const { data: existingManual } = await db
-      .from("ManualActivity")
-      .select("notes")
-      .eq("userId", user.id)
-      .like("notes", "strava:%");
+  const allToSave = [...unmatchedRuns, ...nonRunActivities];
 
-    const existingStravaIds = new Set(
-      (existingManual ?? [])
-        .map((m: { notes: string | null }) => m.notes?.replace("strava:", ""))
-        .filter(Boolean)
-    );
+  const toInsert = allToSave
+    .filter((a) => !existingStravaIds.has(String(a.id)))
+    .map((a) => ({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      type: STRAVA_TYPE_MAP[a.type] ?? a.type,
+      startDate: new Date(a.start_date).toISOString(),
+      durationMins: Math.max(1, Math.round(a.moving_time / 60)),
+      distanceKm: a.distance > 0 ? parseFloat((a.distance / 1000).toFixed(2)) : null,
+      notes: `strava:${a.id}`,
+      workoutId: null,
+      createdAt: new Date().toISOString(),
+    }));
 
-    const toInsert = nonRunActivities
-      .filter((a) => !existingStravaIds.has(String(a.id)))
-      .map((a) => ({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        type: STRAVA_TYPE_MAP[a.type] ?? a.type,
-        startDate: new Date(a.start_date).toISOString(),
-        durationMins: Math.max(1, Math.round(a.moving_time / 60)),
-        distanceKm: a.distance > 0 ? parseFloat((a.distance / 1000).toFixed(2)) : null,
-        notes: `strava:${a.id}`,
-        workoutId: null,
-        createdAt: new Date().toISOString(),
-      }));
-
-    if (toInsert.length > 0) {
-      await db.from("ManualActivity").insert(toInsert);
-    }
+  if (toInsert.length > 0) {
+    await db.from("ManualActivity").insert(toInsert);
   }
 
   // Recompute fitness metrics from recent runs
@@ -160,8 +170,8 @@ export async function POST() {
   }).eq("id", user.id);
 
   return Response.json({
-    activitiesImported: runs.length,
-    crossTrainImported: nonRunActivities.length,
+    runsImported: runs.length,
+    activitiesOnCalendar: toInsert.length,
     fitnessMetrics: { avgPaceSecsPerKm, weeklyMileageKm },
   });
 }
