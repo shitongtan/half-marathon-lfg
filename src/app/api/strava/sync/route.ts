@@ -4,6 +4,22 @@ import { refreshTokenIfNeeded, fetchRecentActivities } from "@/lib/strava";
 
 const RUN_WORKOUT_TYPES = new Set(["Easy Run", "Long Run", "Tempo", "Intervals", "Recovery"]);
 
+const STRAVA_TYPE_MAP: Record<string, string> = {
+  Walk: "Walk",
+  Hike: "Hike",
+  Ride: "Cycling",
+  VirtualRide: "Cycling",
+  EBikeRide: "Cycling",
+  Swim: "Swimming",
+  WeightTraining: "Strength",
+  Workout: "Strength",
+  Yoga: "Yoga",
+  Pilates: "Pilates",
+  Rowing: "Rowing",
+  Crossfit: "HIIT",
+  Elliptical: "Other",
+};
+
 export async function POST() {
   const session = await getSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -77,6 +93,40 @@ export async function POST() {
     }
   }
 
+  // Sync non-run activities (walks, hikes, cross-training) as ManualActivity
+  const nonRunActivities = activities.filter((a) => a.type !== "Run");
+  if (nonRunActivities.length > 0) {
+    const { data: existingManual } = await db
+      .from("ManualActivity")
+      .select("notes")
+      .eq("userId", user.id)
+      .like("notes", "strava:%");
+
+    const existingStravaIds = new Set(
+      (existingManual ?? [])
+        .map((m: { notes: string | null }) => m.notes?.replace("strava:", ""))
+        .filter(Boolean)
+    );
+
+    const toInsert = nonRunActivities
+      .filter((a) => !existingStravaIds.has(String(a.id)))
+      .map((a) => ({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        type: STRAVA_TYPE_MAP[a.type] ?? a.type,
+        startDate: new Date(a.start_date).toISOString(),
+        durationMins: Math.max(1, Math.round(a.moving_time / 60)),
+        distanceKm: a.distance > 0 ? parseFloat((a.distance / 1000).toFixed(2)) : null,
+        notes: `strava:${a.id}`,
+        workoutId: null,
+        createdAt: new Date().toISOString(),
+      }));
+
+    if (toInsert.length > 0) {
+      await db.from("ManualActivity").insert(toInsert);
+    }
+  }
+
   // Recompute fitness metrics from recent runs
   const { data: recentRuns } = await db
     .from("StravaActivity")
@@ -112,6 +162,7 @@ export async function POST() {
 
   return Response.json({
     activitiesImported: runs.length,
+    crossTrainImported: nonRunActivities.length,
     fitnessMetrics: { avgPaceSecsPerKm, weeklyMileageKm },
   });
 }

@@ -26,6 +26,10 @@ function fmtPace(d: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function fmtDate(dateStr: string) {
   return new Date(dateStr.slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -68,7 +72,7 @@ export function CalendarView({
   ]
   while (cells.length % 7) cells.push(null)
 
-  const todayStr = now.toISOString().slice(0, 10)
+  const todayStr = localDateStr(now)
 
   function selKey(s: Sel): string {
     if (s.kind === 'workout') return s.workout.date.slice(0, 10)
@@ -147,7 +151,7 @@ export function CalendarView({
               return <div key={`pad-${i}`} className="min-h-[80px] sm:min-h-[96px] border-b border-r border-white/8" />
             }
 
-            const ds = day.toISOString().slice(0, 10)
+            const ds = localDateStr(day)
             const wo = byDate.get(ds)
             const ma = byDateManual.get(ds)
             const isToday = ds === todayStr
