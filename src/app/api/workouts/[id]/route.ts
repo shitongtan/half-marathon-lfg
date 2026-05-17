@@ -9,21 +9,37 @@ export async function PATCH(request: Request, context: { params: Params }) {
   const session = await getSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { status?: string; actualDistanceKm?: number };
+  let body: {
+    status?: string;
+    actualDistanceKm?: number;
+    workoutType?: string;
+    coachNote?: string;
+  };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { status, actualDistanceKm } = body;
-  if (status !== "completed" && status !== "missed") {
+  const { status, actualDistanceKm, workoutType, coachNote } = body;
+
+  if (status !== undefined && status !== "completed" && status !== "missed") {
     return Response.json({ error: "status must be 'completed' or 'missed'" }, { status: 400 });
+  }
+
+  const updateData: Record<string, unknown> = {};
+  if (status !== undefined) updateData.status = status;
+  if (actualDistanceKm !== undefined) updateData.actualDistanceKm = actualDistanceKm;
+  if (workoutType !== undefined) updateData.workoutType = workoutType;
+  if (coachNote !== undefined) updateData.coachNote = coachNote;
+
+  if (Object.keys(updateData).length === 0) {
+    return Response.json({ error: "No fields to update" }, { status: 400 });
   }
 
   const { data, error } = await db
     .from("Workout")
-    .update({ status, actualDistanceKm: actualDistanceKm ?? null })
+    .update(updateData)
     .eq("id", id)
     .select()
     .single();

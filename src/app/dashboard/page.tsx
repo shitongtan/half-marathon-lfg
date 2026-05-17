@@ -4,7 +4,7 @@ import { db } from '@/lib/supabase'
 import { Navbar } from '@/components/layout/Navbar'
 import { FitnessMetrics } from '@/components/dashboard/FitnessMetrics'
 import { StravaConnectBanner } from '@/components/dashboard/StravaConnectBanner'
-import { WeekCard } from '@/components/dashboard/WeekCard'
+import { CalendarView } from '@/components/dashboard/CalendarView'
 import { GeneratePlanButton } from '@/components/dashboard/GeneratePlanButton'
 import type { WeekData, WorkoutDay, WorkoutType, WorkoutStatus } from '@/types/plan'
 import Link from 'next/link'
@@ -117,15 +117,8 @@ export default async function DashboardPage() {
       )}
 
       {allWeeks.length > 0 && plan && (
-        <div className="space-y-10 mt-6">
-          {allWeeks.map((week) => (
-            <WeekCard
-              key={week.id}
-              week={week}
-              planVersion={plan.version}
-              isCurrent={week.weekNumber === weekNumber}
-            />
-          ))}
+        <div className="mt-6">
+          <CalendarView workouts={allWeeks.flatMap(w => w.workouts)} />
         </div>
       )}
     </div>
