@@ -22,9 +22,9 @@ interface DayTemplate {
   role: "easy" | "tempo" | "long" | "recovery" | "rest" | "cross" | "race";
 }
 
-// Long run multipliers are calibrated so that at scaleFactor=1.0 the plan produces:
-// W1=6km, W3=8km, W7=11km, W12=18km (peak), W13=12km (taper start)
-// This keeps the peak within the 16–18km benchmark range and starts conservatively.
+// Long run multipliers are calibrated so that at scaleFactor=0.6 (beginner) the plan produces:
+// W1=4.5km, W5=6.75km, W9=9.75km, W10=11.25km, W11=12km, W12=13.5km, W13=9km (taper).
+// At scaleFactor=1.0 (intermediate): W12 hits the 18km cap from W10 onward.
 const WEEK_TEMPLATES: WeekTemplate[] = [
   // Week 1 — Base
   {
@@ -289,10 +289,12 @@ function addDays(date: Date, days: number): Date {
   return d;
 }
 
-// Base distances (km) for a runner at scaleFactor=1.0
-const BASE_EASY_KM = 5;
-const BASE_LONG_KM = 8;
-const BASE_TEMPO_KM = 4;
+// Base distances (km) for a runner at scaleFactor=1.0.
+// At sf=0.6 (beginner, ~12km/week): W1 long=4.5km, W12 long=13.5km, peak=16.2km at sf=0.7.
+// At sf=1.0 (intermediate, ~24km/week): W12 long capped at 18km.
+const BASE_EASY_KM = 6;
+const BASE_LONG_KM = 10;
+const BASE_TEMPO_KM = 5;
 const BASE_RECOVERY_KM = 3;
 
 function resolveDistance(
@@ -374,24 +376,10 @@ export function generatePlan(params: {
   const thresholdPace = params.thresholdPaceSecsPerKm ?? null;
   const weeklyMileage = params.weeklyMileageKm ?? 12;
 
-  // Base scale from weekly mileage, clamped to a sane range
-  let scaleFactor = Math.min(1.4, Math.max(0.6, weeklyMileage / 24));
-
-  // Secondary constraint: if the runner's longest recent run is below the
-  // week-1 long run we'd assign, scale down so week 1 starts at ~80% of
-  // their proven distance. This protects injury-prone runners who have high
-  // weekly mileage but haven't yet run long.
-  const longestRunKm = params.longestRecentRunKm ?? null;
-  if (longestRunKm !== null) {
-    // Week 1 long run at current scale = BASE_LONG_KM * 0.75 * scaleFactor
-    const week1Long = BASE_LONG_KM * 0.75 * scaleFactor;
-    const safeMax = longestRunKm * 0.8;
-    if (week1Long > safeMax) {
-      // Back-solve: BASE_LONG_KM * 0.75 * newScale = safeMax
-      const constrainedScale = safeMax / (BASE_LONG_KM * 0.75);
-      scaleFactor = Math.max(0.5, Math.min(scaleFactor, constrainedScale));
-    }
-  }
+  // Base scale from weekly mileage, clamped to a sane range.
+  // At sf=0.6 a beginner gets ~13km/week in W1 and ~13.5km peak long run.
+  // At sf=1.4 an experienced runner hits the 18km long-run cap from W10 onward.
+  const scaleFactor = Math.min(1.4, Math.max(0.6, weeklyMileage / 24));
 
   const start = new Date(startDate);
   const weeks: ClaudePlanWeek[] = [];
