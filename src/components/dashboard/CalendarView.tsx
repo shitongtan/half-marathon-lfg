@@ -274,7 +274,7 @@ export function CalendarView({
       </div>
 
       {sel?.kind === 'workout' && (
-        <WorkoutModal workout={sel.workout} onClose={() => setSel(null)} />
+        <WorkoutModal workout={sel.workout} allWorkouts={workouts} onClose={() => setSel(null)} />
       )}
       {sel?.kind === 'manual' && (
         <ActivityModal date={sel.activity.startDate} activity={sel.activity} onClose={() => setSel(null)} />
@@ -288,12 +288,19 @@ export function CalendarView({
 
 // ─── Workout detail modal ────────────────────────────────────────────────────
 
-function WorkoutModal({ workout, onClose }: { workout: WorkoutDay; onClose: () => void }) {
+const WEEK_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function WorkoutModal({ workout, allWorkouts, onClose }: {
+  workout: WorkoutDay
+  allWorkouts: WorkoutDay[]
+  onClose: () => void
+}) {
   const [marking, setMarking] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [actType, setActType] = useState('Cycling')
   const [duration, setDuration] = useState('')
   const [saving, setSaving] = useState(false)
+  const [moving, setMoving] = useState(false)
 
   const cfg = WC[workout.workoutType] ?? WC.Rest
   const isRest = workout.workoutType === 'Rest'
@@ -302,6 +309,50 @@ function WorkoutModal({ workout, onClose }: { workout: WorkoutDay; onClose: () =
   const wDate = new Date(workout.date.slice(0, 10) + 'T12:00:00')
   const today0 = new Date(); today0.setHours(0, 0, 0, 0)
   const isPastOrToday = wDate <= today0
+
+  // Compute the Mon–Sun week this workout belongs to (plan dayOfWeek: 0=Mon…6=Sun)
+  const currentDateStr = workout.date.slice(0, 10)
+  const jsDay = wDate.getDay() // 0=Sun…6=Sat
+  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay
+  const weekStart = new Date(wDate)
+  weekStart.setDate(wDate.getDate() + mondayOffset)
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart)
+    d.setDate(weekStart.getDate() + i)
+    return { date: d, dateStr: localDateStr(d), planDayOfWeek: i }
+  })
+
+  const weekWorkoutMap = new Map<string, WorkoutDay>()
+  for (const w of allWorkouts) {
+    const ds = w.date.slice(0, 10)
+    if (weekDays.some(wd => wd.dateStr === ds)) weekWorkoutMap.set(ds, w)
+  }
+
+  async function handleMove(targetDateStr: string, targetPlanDayOfWeek: number) {
+    setMoving(true)
+    const targetWorkout = weekWorkoutMap.get(targetDateStr)
+
+    // Move this workout to the target date
+    await fetch(`/api/workouts/${workout.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDateStr, dayOfWeek: targetPlanDayOfWeek }),
+    })
+
+    // If target had a Rest day, swap it back to the current slot
+    if (targetWorkout?.workoutType === 'Rest') {
+      const currentPlanDay = weekDays.find(wd => wd.dateStr === currentDateStr)?.planDayOfWeek ?? 0
+      await fetch(`/api/workouts/${targetWorkout.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: currentDateStr, dayOfWeek: currentPlanDay }),
+      })
+    }
+
+    setMoving(false)
+    window.location.reload()
+  }
 
   const isActionable = workout.status === 'pending' && isPastOrToday && !isRest && !isCross
   const canLog = isPastOrToday && (isRest || isCross) && workout.status === 'pending'
@@ -409,6 +460,41 @@ function WorkoutModal({ workout, onClose }: { workout: WorkoutDay; onClose: () =
             </p>
           </div>
         </>
+      )}
+
+      {/* Move to another day in the week */}
+      {workout.status === 'pending' && (
+        <div className="px-5 pb-3">
+          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold mb-2">Move to</p>
+          <div className="grid grid-cols-7 gap-1">
+            {weekDays.map(({ dateStr, planDayOfWeek }) => {
+              const isCurrentDay = dateStr === currentDateStr
+              const existing = weekWorkoutMap.get(dateStr)
+              const isOccupied = !!existing && existing.workoutType !== 'Rest' && !isCurrentDay
+              const disabled = isCurrentDay || isOccupied || moving
+
+              return (
+                <button
+                  key={dateStr}
+                  disabled={disabled}
+                  onClick={() => !disabled && handleMove(dateStr, planDayOfWeek)}
+                  title={isOccupied ? `${existing?.workoutType} already here` : WEEK_DAY_LABELS[planDayOfWeek]}
+                  className={[
+                    'py-1.5 rounded-lg text-[10px] font-medium border transition-all',
+                    isCurrentDay
+                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 cursor-default'
+                      : isOccupied
+                        ? 'bg-white/3 border-white/5 text-gray-700 cursor-default'
+                        : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/12 hover:text-white cursor-pointer',
+                    moving ? 'opacity-50' : '',
+                  ].join(' ')}
+                >
+                  {WEEK_DAY_LABELS[planDayOfWeek]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {/* Actions */}

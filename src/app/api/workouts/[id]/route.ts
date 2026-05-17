@@ -15,6 +15,8 @@ export async function PATCH(request: Request, context: { params: Params }) {
     stravaActivityId?: string | null;
     workoutType?: string;
     coachNote?: string;
+    date?: string;
+    dayOfWeek?: number;
   };
   try {
     body = await request.json();
@@ -34,6 +36,8 @@ export async function PATCH(request: Request, context: { params: Params }) {
   if ("stravaActivityId" in body) updateData.stravaActivityId = body.stravaActivityId ?? null;
   if (workoutType !== undefined) updateData.workoutType = workoutType;
   if (coachNote !== undefined) updateData.coachNote = coachNote;
+  if (body.date !== undefined) updateData.date = new Date(body.date).toISOString();
+  if (body.dayOfWeek !== undefined) updateData.dayOfWeek = body.dayOfWeek;
 
   if (Object.keys(updateData).length === 0) {
     return Response.json({ error: "No fields to update" }, { status: 400 });
