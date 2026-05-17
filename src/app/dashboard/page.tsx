@@ -91,6 +91,7 @@ export default async function DashboardPage() {
         stravaConnected={!noStrava}
         weekNumber={plan ? weekNumber : undefined}
         totalWeeks={plan ? totalWeeks : undefined}
+        hasPlan={!!plan}
       />
 
       {plan && (

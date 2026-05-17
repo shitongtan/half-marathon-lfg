@@ -8,11 +8,26 @@ interface NavbarProps {
   stravaConnected: boolean
   weekNumber?: number
   totalWeeks?: number
+  hasPlan?: boolean
 }
 
-export function Navbar({ stravaConnected, weekNumber, totalWeeks }: NavbarProps) {
+export function Navbar({ stravaConnected, weekNumber, totalWeeks, hasPlan }: NavbarProps) {
   const router = useRouter()
   const [syncing, setSyncing] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+
+  async function handleRegenerate() {
+    if (!confirm('This will delete your current plan and all logged progress. Regenerate?')) return
+    setRegenerating(true)
+    try {
+      await fetch('/api/plan/generate', { method: 'POST' })
+      router.refresh()
+    } catch {
+      // silently fail
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   async function handleSync() {
     setSyncing(true)
@@ -62,11 +77,20 @@ export function Navbar({ stravaConnected, weekNumber, totalWeeks }: NavbarProps)
             </span>
             <button
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncing || regenerating}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-white/10 text-gray-300 hover:bg-[#222] hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {syncing ? 'Syncing...' : 'Sync'}
             </button>
+            {hasPlan && (
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating || syncing}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-white/10 text-gray-400 hover:bg-[#222] hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {regenerating ? 'Regenerating...' : 'Regenerate Plan'}
+              </button>
+            )}
           </>
         ) : (
           <Link
